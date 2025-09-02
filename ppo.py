@@ -150,9 +150,8 @@ def compute_gae(
 
         # compute advantage with GAE
         advantages = advantages.at[t].set(
-            delta + gamma * gae_lambda * (1.0 - dones[t]) - values[t]
+            delta + gamma * gae_lambda * (1.0 - dones[t]) * last_advantage
         )
-
         last_advantage = advantages[t]
 
     # returns are advantages + values
@@ -193,13 +192,16 @@ def ppo_loss_fn(params, batch: RolloutData, clip_epsilon, value_coeff, entropy_c
     entropy = jnp.sum(action_log_std) + 0.5 * batch.actions.shape[-1] * (
         1 + jnp.log(2 * jnp.pi)
     )
+    # entropy = jnp.mean(
+    # 0.5 * ( (action_std ** 2) + 2 * action_log_std + jnp.log(2 * jnp.pi) )
+    # )
+
     entropy_loss = -entropy_coeff * entropy
 
     # total loss
     total_loss = actor_loss + value_coeff * critic_loss + entropy_loss
 
     # debugging metrics
-    approx_kl = jnp.mean(batch.log_probs - current_log_probs)
     approx_kl = jnp.mean(batch.log_probs - current_log_probs)
     clipped_fraction = jnp.mean(jnp.abs(ratio - 1.0) > clip_epsilon)
     explained_variance = 1.0 - jnp.var(batch.returns - values) / jnp.var(batch.returns)
@@ -280,7 +282,8 @@ class PPOAgent:
 
         # jit compile for speed
         self.jit_forward = jit(forward_network)
-        self.grad_fn = jit(grad(ppo_loss_fn, has_aux=True))
+        self.grad_fn = jit(jax.value_and_grad(ppo_loss_fn, has_aux=True))
+        # self.grad_fn = jit(grad(ppo_loss_fn, has_aux=True))
 
     def get_action(self, obs: jnp.ndarray, key: jax.Array, deterministic: bool = False):
         """Get action from policy"""
@@ -324,7 +327,15 @@ class PPOAgent:
                 )
 
                 # compute gradients
-                grads, metrics = self.grad_fn(
+                #grads, metrics = self.grad_fn(
+                #    self.params,
+                #    batch,
+                #    self.config.clip_epsilon,
+                #    self.config.value_coeff,
+                #    self.config.entropy_coeff,
+                #)
+
+                (loss, metrics), grads = self.grad_fn(
                     self.params,
                     batch,
                     self.config.clip_epsilon,
