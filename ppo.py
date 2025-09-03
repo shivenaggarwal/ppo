@@ -113,9 +113,9 @@ def sample_action(
 
     # log prob calculated using the pdf of gaussian dist
     log_prob = -0.5 * (
-        jnp.sum((action - action_mean) ** 2 / (action_std**2))
-        + jnp.sum(2 * action_log_std)
-        + action_mean.shape[0] * jnp.log(2 * jnp.pi)
+        jnp.sum(((action - action_mean) ** 2) / (action_std**2), axis=-1)
+        + jnp.sum(2 * action_log_std, axis=-1)
+        + action_mean.shape[-1] * jnp.log(2 * jnp.pi)
     )
 
     return action, log_prob
@@ -172,8 +172,8 @@ def ppo_loss_fn(params, batch: RolloutData, clip_epsilon, value_coeff, entropy_c
     action_std = jnp.exp(action_log_std)
     # calculated using the gaussian log likelihood formula
     current_log_probs = -0.5 * (
-        jnp.sum((batch.actions - action_mean) ** 2 / (action_std**2), axis=-1)
-        + jnp.sum(2 * action_log_std)
+        jnp.sum(((batch.actions - action_mean) ** 2) / (action_std**2), axis=-1)
+        + jnp.sum(2 * action_log_std, axis=-1)
         + batch.actions.shape[-1] * jnp.log(2 * jnp.pi)
     )
 
@@ -189,12 +189,10 @@ def ppo_loss_fn(params, batch: RolloutData, clip_epsilon, value_coeff, entropy_c
 
     # entropy bonus
     # entropy is a measure of randomness or uncertainty in the policy's action distribution
-    entropy = jnp.sum(action_log_std) + 0.5 * batch.actions.shape[-1] * (
+    entropy = jnp.sum(action_log_std, axis=-1) + 0.5 * batch.actions.shape[-1] * (
         1 + jnp.log(2 * jnp.pi)
     )
-    # entropy = jnp.mean(
-    # 0.5 * ( (action_std ** 2) + 2 * action_log_std + jnp.log(2 * jnp.pi) )
-    # )
+    entropy = jnp.mean(entropy)
 
     entropy_loss = -entropy_coeff * entropy
 
@@ -327,13 +325,13 @@ class PPOAgent:
                 )
 
                 # compute gradients
-                #grads, metrics = self.grad_fn(
+                # grads, metrics = self.grad_fn(
                 #    self.params,
                 #    batch,
                 #    self.config.clip_epsilon,
                 #    self.config.value_coeff,
                 #    self.config.entropy_coeff,
-                #)
+                # )
 
                 (loss, metrics), grads = self.grad_fn(
                     self.params,
